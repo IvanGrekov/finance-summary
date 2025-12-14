@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
-import { OpenAI } from "openai";
+import OpenAI from "openai";
 
 const UA_MARKET_URL = "https://icu.ua/research/market-reviews";
 const US_MARKET_URL =
@@ -85,8 +85,7 @@ async function appendToThread(
   threadId: string,
   content: string
 ): Promise<void> {
-  await client.beta.threads.messages.create({
-    thread_id: threadId,
+  await client.beta.threads.messages.create(threadId, {
     role: "assistant",
     content,
   });
@@ -116,7 +115,7 @@ async function main(): Promise<void> {
     throw new Error("OPENAI_API_KEY is required");
   }
 
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const model = process.env.OPENAI_MODEL ?? "o1-preview";
   const threadId = process.env.CHAT_THREAD_ID;
   const runDate = new Date();
 
