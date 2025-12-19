@@ -1,7 +1,9 @@
+import "dotenv/config";
 import { execSync } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import OpenAI from "openai";
+import https from "https";
 
 const UA_MARKET_URL = "https://icu.ua/research/market-reviews";
 const US_MARKET_URL =
@@ -23,88 +25,98 @@ function formatDate(runDate: Date): string {
 
 function shouldIncludeEcb(runDate: Date): boolean {
   const month = runDate.getMonth() + 1; // months are zero-based
-  return runDate.getDate() >= 15 && QUARTER_START_MONTHS.has(month);
+  return runDate.getDate() >= 14 && QUARTER_START_MONTHS.has(month);
 }
 
-function buildSources(runDate: Date): Source[] {
+function buildSources(): Source[] {
+  const runDate = new Date();
   const sources: Source[] = [
-    { name: "UA market", url: UA_MARKET_URL },
-    { name: "US market", url: US_MARKET_URL },
-    { name: "Global overview", url: GLOBAL_MARKET_URL },
+    { name: "Український ринок", url: UA_MARKET_URL },
+    { name: "Американський ринок", url: US_MARKET_URL },
+    { name: "Короткий огляд глобального ринку", url: GLOBAL_MARKET_URL },
   ];
 
   if (shouldIncludeEcb(runDate)) {
-    sources.push({ name: "EU market", url: ECB_MARKET_URL });
+    sources.push({ name: "Європейський ринок, квартальний огляд", url: ECB_MARKET_URL });
   }
 
   return sources;
 }
 
-function buildPrompt(runDate: Date, sources: Source[]): string {
+function buildSystemPrompt(): string {
   const lines: string[] = [
-    "You are preparing a weekly financial overview.",
-    `Today is ${formatDate(runDate)} (Saturday run).`,
-    "Browse each source below for its latest weekly issue and summarize findings.",
-    "Use thinking/reasoning to produce concise, bullet-listed highlights.",
-    "Sources:",
+    "Ти фінансовий аналітик. ",
+    "Пиши чіткі, структуровані огляди українською мовою у форматі bullet list. ",
+    "Використовуй простий, зрозумілий для читача текст, без перевантаження спеціальними термінами та аббревіатурами. Без всяких EM, UST, IG gilts, DM, тощо. Роби текст зрозумілим для читача не з фінансового сектору. ",
+    "Секції: 'Головні події', 'Основні загрози / ризики', 'Ключові прогнози'.",
+    "Якщо є трохи цифр, будь ласка вкажи їх також, але не вигадуй нічого від себе. Не змінюй цифри, лише показуй їх. ",
   ];
-
-  for (const source of sources) {
-    lines.push(`- ${source.name}: ${source.url}`);
-  }
-
-  lines.push(
-    "",
-    "Return a bullet list grouped under these headings (in order):",
-    "main insights / news; warnings / cautions; threats; forecasts.",
-    "Use only the most recent weekly materials from each source."
-  );
 
   return lines.join("\n");
 }
 
-async function runSummaryRequest(
-  client: OpenAI,
-  model: string,
-  prompt: string
-): Promise<string> {
-  const response = await client.chat.completions.create({
-    model,
-    temperature: 0.2,
-    messages: [
-      { role: "system", content: "You summarize financial markets." },
-      { role: "user", content: prompt },
-    ],
-  });
+function buildUserPrompt(sources: Source[]): string {
+  const lines: string[] = [
+    "Знайди на цих джерелах: ",
+    sources.map((source) => `- ${source.name}: ${source.url}`).join("\n"),
+    "найактуальніші фінансові звіти ",
+    "найактуальніший щотижневий фінансовий звіт (Financial Weekly / Фінансовий тижневик) " +
+    "і зроби по ньому короткий звіт у вказаному форматі: " +
+    "Україна: ОВДП, євробонди, валютний ринок, стан економіки; ",
+    "США: облігації, акції, стан економіки; ",
+    "Європа: облігації, акції, стан економіки; ",
+    "Світ: облігації, акції, стан економіки; ",
+    "Інвестування з позиції українця, який хоче зберегти свої заощадження та хоче помірного зростання портфелю без ризиків, на 8%-12% річних, з диверсифікацією: облігації, акції, криптовалюти, реальний сектор, нерухомість."
+  ];
 
-  return response.choices[0].message.content ?? "";
+  return lines.join("\n");
 }
 
-async function appendToThread(
-  client: OpenAI,
-  threadId: string,
-  content: string
-): Promise<void> {
-  await client.beta.threads.messages.create(threadId, {
-    role: "assistant",
-    content,
-  });
+async function runSummaryRequest({
+  client,
+  model,
+  systemPrompt,
+  userPrompt,
+}: {
+  client: OpenAI;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+}): Promise<string> {
+const response = await client.responses.create({
+  model,
+  reasoning: { effort: "high" },
+  // @ts-ignore
+  tools: [{ type: "web_search" }],
+  tool_choice: "auto",
+  input: [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
+    {
+      role: "user",
+      content: userPrompt,
+    },
+  ],
+});
+
+  return response.output_text ?? "";
 }
 
-function writeMarkdown(runDate: Date, content: string): string {
+function writeMarkdown(content: string): string {
   const targetDir = path.join(process.cwd(), "summaries");
   mkdirSync(targetDir, { recursive: true });
 
-  const outputPath = path.join(targetDir, `${formatDate(runDate)}.md`);
-  const header = `# Weekly financial overview (${formatDate(runDate)})\n\n`;
-  writeFileSync(outputPath, header + content + "\n", { encoding: "utf8" });
+  const outputPath = path.join(targetDir, `${formatDate(new Date())}.md`);
+  writeFileSync(outputPath, content + "\n", { encoding: "utf8" });
 
   return outputPath;
 }
 
-function gitCommit(filePath: string, runDate: Date): void {
+function gitCommit(filePath: string): void {
   execSync(`git add ${JSON.stringify(filePath)}`, { stdio: "inherit" });
-  execSync(`git commit -m ${JSON.stringify(`Add weekly summary for ${formatDate(runDate)}`)}`, {
+  execSync(`git commit -m ${JSON.stringify(`Add weekly summary for ${formatDate(new Date())}`)}`, {
     stdio: "inherit",
   });
 }
@@ -115,23 +127,17 @@ async function main(): Promise<void> {
     throw new Error("OPENAI_API_KEY is required");
   }
 
-  const model = process.env.OPENAI_MODEL ?? "o1-preview";
-  const threadId = process.env.CHAT_THREAD_ID;
-  const runDate = new Date();
+  const model = process.env.OPENAI_MODEL ?? "gpt-5.1";
 
   const client = new OpenAI({ apiKey });
 
-  const sources = buildSources(runDate);
-  const prompt = buildPrompt(runDate, sources);
-  const summary = await runSummaryRequest(client, model, prompt);
+  const sources = buildSources();
+  const systemPrompt = buildSystemPrompt();
+  const userPrompt = buildUserPrompt(sources);
+  const summary = await runSummaryRequest({client, model, systemPrompt, userPrompt});
+  const outputPath = writeMarkdown(summary);
 
-  const outputPath = writeMarkdown(runDate, summary);
-
-  if (threadId && summary.trim().length > 0) {
-    await appendToThread(client, threadId, summary);
-  }
-
-  gitCommit(outputPath, runDate);
+  // gitCommit(outputPath);
 }
 
 main().catch((error) => {
