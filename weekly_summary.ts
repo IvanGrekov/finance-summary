@@ -57,7 +57,7 @@ function buildUserPrompt(sources: Source[]): string {
   const lines: string[] = [
     "Знайди на цих джерелах: ",
     sources.map((source) => `- ${source.name}: ${source.url}`).join("\n"),
-    "найактуальніші фінансові звіти ",
+    `найактуальніші фінансові звіти станом на сьогодні, ${formatDate(new Date())}.`,
     "найактуальніший щотижневий фінансовий звіт (Financial Weekly / Фінансовий тижневик) " +
     "і зроби по ньому короткий звіт у вказаному форматі: " +
     "Україна: ОВДП, євробонди, валютний ринок, стан економіки; ",
@@ -183,6 +183,8 @@ export async function sendTelegramMessageLong({
   disable_notification,
 }: SendTelegramMessageArgs): Promise<void> {
   const MAX_LENGTH = 4000;
+  const MAIN_SEPARATOR = "##";
+  const SUB_SEPARATOR = "###";
   
   // If the text is short enough, send it as a single message
   if (text.length <= MAX_LENGTH) {
@@ -191,13 +193,13 @@ export async function sendTelegramMessageLong({
 
   // Split by newlines first to keep paragraphs together
   const parts: string[] = [];
-  const textLines = text.split("\n");
+  const textLines = text.split(MAIN_SEPARATOR);
   let currentPart = "";
 
 
   for (const line of textLines) {
     if (currentPart.length + line.length < MAX_LENGTH) {
-      currentPart += (currentPart ? "\n" : "") + line;
+      currentPart += (currentPart ? MAIN_SEPARATOR : "") + line;
     } else {
       // If the current part is not empty, add it to the parts array
       if (currentPart) {
@@ -206,14 +208,14 @@ export async function sendTelegramMessageLong({
       }
 
       if (line.length > MAX_LENGTH) {
-        const lineSentences = line.split(".");
+        const lineSentences = line.split(SUB_SEPARATOR);
         let text = ""
         for (const sentence of lineSentences) {
           if (text.length + sentence.length < MAX_LENGTH) {
-            text += sentence + ".";
+            text += sentence + SUB_SEPARATOR;
           } else {
             parts.push(text);
-            text = sentence + ".";
+            text = sentence + SUB_SEPARATOR;
           }
         }
       } else {
