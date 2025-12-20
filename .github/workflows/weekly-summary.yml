@@ -1,0 +1,43 @@
+name: Weekly Finance Summary
+
+on:
+  schedule:
+    # Run every Saturday at 10:00 AM UTC (adjust timezone as needed)
+    # Cron format: minute hour day month day-of-week
+    - cron: '0 10 * * 6'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  generate-summary:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run weekly summary
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: npm run summary
+
+      - name: Commit and push summary files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add summaries/
+          git diff --staged --quiet || git commit -m "Add weekly finance summary [skip ci]"
+          git push
+        continue-on-error: true
+
