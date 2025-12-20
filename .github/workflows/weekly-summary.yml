@@ -2,9 +2,9 @@ name: Weekly Finance Summary
 
 on:
   schedule:
-    # Run every Saturday at 07:30 PM UTC (adjust timezone as needed)
+    # Run every Saturday at 08:00 AM UTC (adjust timezone as needed)
     # Cron format: minute hour day month day-of-week
-    - cron: '30 19 * * 6'
+    - cron: '0 8 * * 6'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
           else
             echo "ℹ️  This is a MANUAL run"
           fi
-          echo "Schedule configured: Every Saturday at 10:00 AM UTC (cron: 0 10 * * 6)"
+          echo "Schedule configured: Every Saturday at 08:00 AM UTC (cron: 0 8 * * 6)"
       
       - name: Checkout repository
         uses: actions/checkout@v4
