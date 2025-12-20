@@ -4,7 +4,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "summary": "ts-node weekly_summary.ts",
+        "summary": "tsx weekly_summary.ts",
         "build": "tsc --noEmit"
     },
     "dependencies": {
@@ -13,7 +13,7 @@
     },
     "devDependencies": {
         "@types/node": "^22.7.4",
-        "ts-node": "^10.9.2",
+        "tsx": "^4.7.0",
         "typescript": "^5.6.3"
     }
 }
