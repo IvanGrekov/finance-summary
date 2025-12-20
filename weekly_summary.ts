@@ -242,20 +242,22 @@ export async function sendTelegramMessageLong({
 }
 
 async function main(): Promise<void> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is required");
-  }
+  // const apiKey = process.env.OPENAI_API_KEY;
+  // if (!apiKey) {
+  //   throw new Error("OPENAI_API_KEY is required");
+  // }
 
-  const model = process.env.OPENAI_MODEL ?? "gpt-5.1";
+  // const model = process.env.OPENAI_MODEL ?? "gpt-5.1";
 
-  const client = new OpenAI({ apiKey });
+  // const client = new OpenAI({ apiKey });
 
-  const sources = buildSources();
-  const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildUserPrompt(sources);
-  const summary = await runSummaryRequest({client, model, systemPrompt, userPrompt});
-  writeMarkdown(summary);
+  // const sources = buildSources();
+  // const systemPrompt = buildSystemPrompt();
+  // const userPrompt = buildUserPrompt(sources);
+  // const summary = await runSummaryRequest({client, model, systemPrompt, userPrompt});
+  // writeMarkdown(summary);
+
+  const summary = 'Hello, world!';
 
   await sendTelegramMessageLong({
     text: summary,
