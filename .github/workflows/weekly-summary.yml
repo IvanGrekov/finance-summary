@@ -2,9 +2,9 @@ name: Weekly Finance Summary
 
 on:
   schedule:
-    # Run every Saturday at 10:00 AM UTC (adjust timezone as needed)
+    # Run every Saturday at 07:30 PM UTC (adjust timezone as needed)
     # Cron format: minute hour day month day-of-week
-    - cron: '0 10 * * 6'
+    - cron: '30 19 * * 6'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
