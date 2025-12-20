@@ -12,6 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Log run information
+        run: |
+          echo "=== Workflow Run Information ==="
+          echo "Triggered at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "Triggered by: ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "✅ This is a SCHEDULED run (clock icon will appear in GitHub UI)"
+          else
+            echo "ℹ️  This is a MANUAL run"
+          fi
+          echo "Schedule configured: Every Saturday at 10:00 AM UTC (cron: 0 10 * * 6)"
+      
       - name: Checkout repository
         uses: actions/checkout@v4
 

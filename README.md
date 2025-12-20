@@ -12,7 +12,7 @@ A scheduled GPT-based summarizer that runs weekly to generate financial market s
 
 ### Scheduling and flow
 1. **Scheduler**: 
-   - **GitHub Actions** (recommended): Configured to run every Monday at 9:00 AM UTC via `.github/workflows/weekly-summary.yml`
+   - **GitHub Actions** (recommended): Configured to run every Saturday at 10:00 AM UTC via `.github/workflows/weekly-summary.yml`
    - **Alternative**: Configure a hosted cron (Workers Cron, Pipedream task, Apps Script trigger) for `11:00` every Saturday.
 2. **Job logic** (implemented in `weekly_summary.ts`):
    - Check if the run date meets the EU bulletin rule before adding the ECB link.
@@ -52,9 +52,21 @@ Return a bullet list grouped under these headings: main insights / news; warning
    - Check "Allow GitHub Actions to create and approve pull requests"
 
 3. **Schedule**:
-   - The workflow runs every Monday at 9:00 AM UTC by default
+   - The workflow runs every Saturday at 10:00 AM UTC (cron: `0 10 * * 6`)
    - To change the schedule, edit `.github/workflows/weekly-summary.yml` and modify the cron expression
    - You can also manually trigger the workflow from the Actions tab
+
+4. **Verify Schedule**:
+   - **Important**: GitHub Actions doesn't show scheduled runs BEFORE they execute - the clock icon only appears AFTER a scheduled run completes
+   - To verify the schedule is active:
+     - Check that `.github/workflows/weekly-summary.yml` exists on your default branch (`master`)
+     - Verify the cron expression is correct: `0 10 * * 6` (every Saturday at 10:00 AM UTC)
+     - Wait until Saturday - if it runs automatically, you'll see a clock icon (🕐) next to that run
+   - **Requirements for scheduled workflows**:
+     - The workflow file must be on the default branch
+     - Your repository must have had activity (commits, PRs, etc.) in the last 60 days
+     - To ensure it keeps running, make occasional commits or enable "Keep workflows active" in repository settings
+   - **Testing**: You can manually trigger the workflow anytime using "Run workflow" button to test it works
 
 ### Running Locally
 
