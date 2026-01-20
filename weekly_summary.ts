@@ -6,11 +6,17 @@ import OpenAI from "openai";
 const UA_MARKET_URL = "https://icu.ua/research/market-reviews";
 const US_MARKET_URL =
   "https://www.blackrock.com/us/individual/insights/blackrock-investment-institute/weekly-commentary";
-const GLOBAL_MARKET_URL = "https://www.ib.barclays/our-insights/weekly-insights.html";
 const ECB_MARKET_URL =
   "https://www.ecb.europa.eu/press/economic-bulletin/html/index.en.html";
 
 const QUARTER_START_MONTHS = new Set([1, 4, 7, 10]);
+
+const TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
+const POLL_MS = 60 * 1000; // 1 minute
+
+const MAX_MESSAGE_LENGTH = 4000;
+const MAIN_SEPARATOR = "##";
+const SUB_SEPARATOR = "###";
 
 function formatDate(runDate: Date): string {
   return runDate.toISOString().slice(0, 10);
@@ -31,7 +37,6 @@ function buildSources(): Source[] {
   const sources: Source[] = [
     { name: "Український ринок", url: UA_MARKET_URL },
     { name: "Американський ринок", url: US_MARKET_URL },
-    { name: "Короткий огляд глобального ринку", url: GLOBAL_MARKET_URL },
   ];
 
   if (shouldIncludeEcb(runDate)) {
@@ -81,25 +86,71 @@ async function runSummaryRequest({
   systemPrompt: string;
   userPrompt: string;
 }): Promise<string> {
-const response = await client.responses.create({
-  model,
-  reasoning: { effort: "high" },
-  // @ts-ignore
-  tools: [{ type: "web_search" }],
-  tool_choice: "auto",
-  input: [
-    {
-      role: "system",
-      content: systemPrompt,
-    },
-    {
-      role: "user",
-      content: userPrompt,
-    },
-  ],
-});
+  const startedAt = Date.now();
 
-  return response.output_text ?? "";
+  try {
+    let response = await client.responses.create({
+      background: true,
+      model,
+      reasoning: { effort: "high" },
+      // @ts-ignore
+      tools: [{
+        type: "web_search",
+        filters: {
+          allowed_domains: [
+            "icu.ua",
+            "blackrock.com",
+            "ecb.europa.eu",
+          ],
+        },
+      }],
+      tool_choice: "auto",
+      input: [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+        {
+          role: "user",
+          content: userPrompt,
+        },
+      ],
+    }, { timeout: TIMEOUT });
+
+    console.log("start", `id: ${response.id}, status: ${response.status}`);
+    console.log("------------------------------");
+  
+    while (response.status === "queued" || response.status === "in_progress") {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed > TIMEOUT) {
+        throw new Error(`OpenAI response timed out: ${elapsed}ms > ${TIMEOUT}ms`);
+      }
+
+      await new Promise((resolve) => {
+        console.log("Waiting for response to be completed...");
+        console.log("------------------------------");
+        setTimeout(resolve, POLL_MS);
+      });
+      response = await client.responses.retrieve(response.id);
+      console.log(`id: ${response.id}, status: ${response.status}`);
+      console.log("------------------------------");
+    }
+
+    if (response.status !== "completed") {
+      throw new Error(`OpenAI response failed: ${response.status}`);
+    }
+
+    console.log("end", `id: ${response.id}, status: ${response.status}`);
+    console.log("------------------------------");
+
+    return response.output_text ?? "";
+  }
+  catch(error: unknown) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to create OpenAI response: ${error.message}`);
+    }
+    throw new Error(`Failed to create OpenAI response: ${String(error)}`);
+  }
 }
 
 function writeMarkdown(content: string): string {
@@ -172,54 +223,42 @@ async function sendTelegramMessage({
     if (error instanceof Error) {
       throw new Error(`Failed to send Telegram message: ${error.message}`);
     }
-    throw error;
+    throw new Error(`Failed to send Telegram message: ${String(error)}`);
   }
 }
 
-export async function sendTelegramMessageLong({
-  text,
-  parse_mode,
-  disable_web_page_preview,
-  disable_notification,
-}: SendTelegramMessageArgs): Promise<void> {
-  const MAX_LENGTH = 4000;
-  const MAIN_SEPARATOR = "##";
-  const SUB_SEPARATOR = "###";
-  
-  // If the text is short enough, send it as a single message
-  if (text.length <= MAX_LENGTH) {
-    return sendTelegramMessage({ text, parse_mode, disable_web_page_preview, disable_notification });
-  }
 
-  // Split by newlines first to keep paragraphs together
+const splitTextToParts = (text: string, separator = MAIN_SEPARATOR) => {
   const parts: string[] = [];
-  const textLines = text.split(MAIN_SEPARATOR);
-  let currentPart = "";
+  const sections = text.split(separator).map((section, i) => `${i ? separator : ""}${section}`);
+  let currentPart = '';
 
-
-  for (const line of textLines) {
-    if (currentPart.length + line.length < MAX_LENGTH) {
-      currentPart += (currentPart ? MAIN_SEPARATOR : "") + line;
+  for (const section of sections) {
+    if (currentPart.length + section.length <= MAX_MESSAGE_LENGTH) {
+      currentPart += section;
     } else {
-      // If the current part is not empty, add it to the parts array
+      // Only push currentPart if it's not empty
       if (currentPart) {
         parts.push(currentPart);
-        currentPart = "";
       }
 
-      if (line.length > MAX_LENGTH) {
-        const lineSentences = line.split(SUB_SEPARATOR);
-        let text = ""
-        for (const sentence of lineSentences) {
-          if (text.length + sentence.length < MAX_LENGTH) {
-            text += sentence + SUB_SEPARATOR;
-          } else {
-            parts.push(text);
-            text = sentence + SUB_SEPARATOR;
+      if (section.length > MAX_MESSAGE_LENGTH) {
+        // Reset currentPart to start a new part
+        currentPart = "";
+        
+        // Only recursively split if we're not already using SUB_SEPARATOR
+        // and the section contains SUB_SEPARATOR
+        if (separator === MAIN_SEPARATOR && section.includes(SUB_SEPARATOR)) {
+          const sectionParts = splitTextToParts(section, SUB_SEPARATOR);
+          parts.push(...sectionParts);
+        } else {
+          // Hard split: break into chunks of MAX_MESSAGE_LENGTH
+          for (let i = 0; i < section.length; i += MAX_MESSAGE_LENGTH) {
+            parts.push(section.slice(i, i + MAX_MESSAGE_LENGTH));
           }
         }
       } else {
-        parts.push(line);
+        currentPart = section;
       }
     }
   }
@@ -228,16 +267,35 @@ export async function sendTelegramMessageLong({
     parts.push(currentPart);
   }
 
+  return parts;
+}
+
+async function sendTelegramMessageLong({
+  text,
+  parse_mode,
+  disable_web_page_preview,
+  disable_notification,
+}: SendTelegramMessageArgs): Promise<void> {  
+  // If the text is short enough, send it as a single message
+  if (text.length <= MAX_MESSAGE_LENGTH) {
+    return sendTelegramMessage({ text, parse_mode, disable_web_page_preview, disable_notification });
+  }
+
+  const parts = splitTextToParts(text);
+
   // Send all parts sequentially
-  for (let i = 0; i < parts.length; i++) {    
+  for (let i = 0; i < parts.length; i++) {   
+    const partTitle = `[Part ${i + 1}/${parts.length}]`; 
     const partText = parts.length > 1 
-      ? `[Part ${i + 1}/${parts.length}]\n\n${parts[i]}`
+      ? `${partTitle}\n\n${parts[i]}`
       : parts[i];
     
     await sendTelegramMessage({ text: partText, parse_mode, disable_web_page_preview, disable_notification });
     
     // Small delay between messages to avoid rate limiting
     if (i < parts.length - 1) {
+      console.log(`${partTitle} sent, waiting...`);
+      console.log("------------------------------");
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
@@ -251,7 +309,11 @@ async function main(): Promise<void> {
 
   const model = process.env.OPENAI_MODEL ?? "gpt-5.1";
 
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ 
+    apiKey,
+    maxRetries: 0, // Disable automatic retries
+    timeout: TIMEOUT, // 15 minutes in milliseconds
+  });
 
   const sources = buildSources();
   const systemPrompt = buildSystemPrompt();
